@@ -16,12 +16,18 @@ def load_raw_data(data_dir: Path):
     df_fx = pd.read_csv(fx_path, parse_dates=["Date"])
     df_home = pd.read_excel(home_path)
 
-    # TODO: כאן תכניס את כל קוד הניקוי/איחוד שעשית במחברת
-    # df_home ---> housing_long   (צריך לכלול Investor_Net_Value)
-    # df_sp + df_fx ---> sp_fx    (צריך לכלול TR_Index_NIS)
+    # ניקוי נתוני דיור
+    df_home["Date"] = pd.to_datetime(df_home["Year"].astype(str) + "Q" + df_home["Quarter"].astype(str))
+    housing_long = df_home[["Date", "Investor_Net_Value"]].copy()
+    housing_long = housing_long.dropna()
 
-    # כדי שהאפליקציה לא תקרוס בשלב ראשון, נחזיר את הטבלאות הגולמיות
-    return df_home, df_sp.join(df_fx, how="inner")
+    # ניקוי נתוני מדד SP500 לדולרים והמרה לשקלים
+    df_sp["Date"] = pd.to_datetime(df_sp["Date"])
+    df_fx["Date"] = pd.to_datetime(df_fx["Date"])
+    sp_merged = pd.merge(df_sp, df_fx, on="Date", how="inner")
+    sp_merged["TR_Index_NIS"] = sp_merged["TR_Index"] * sp_merged["ILS"]
+
+    return housing_long, sp_merged
 
 
 # -------- מריץ סימולציה לפי שנים וסכום --------
@@ -36,3 +42,20 @@ def run_simulation(housing_long, sp_fx,
     # כולל חישובי שכירות, מס, משכנתא, וכו'.
     # בינתיים נחזיר None כך שהאפליקציה תציג הודעת שגיאה ולא תקרוס.
     return None
+
+
+# =========================================================
+# 📈 Simulate Fixed Investment Over Time
+# =========================================================
+
+def simulate_fixed_investment(start_date: str, amount: float, housing_df: pd.DataFrame, sp_df: pd.DataFrame):
+    # Filter data from start date
+    housing = housing_df[housing_df["Date"] >= pd.to_datetime(start_date)].copy()
+    sp = sp_df[sp_df["Date"] >= pd.to_datetime(start_date)].copy()
+
+    # Normalize values – investment starts at 'amount'
+    housing["Value_NIS"] = housing["Investor_Net_Value"] / housing["Investor_Net_Value"].iloc[0] * amount
+    sp["Value_NIS"] = sp["TR_Index_NIS"] / sp["TR_Index_NIS"].iloc[0] * amount
+
+    return housing[["Date", "Value_NIS"]], sp[["Date", "Value_NIS"]]
+
